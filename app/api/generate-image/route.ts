@@ -1,19 +1,27 @@
+import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import OpenAI from 'openai'
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+})
 
 function isValidKaspaAddress(address: string): boolean {
   return address.startsWith('kaspa:') && address.length >= 10
 }
 
-export async function POST(request: Request) {
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json(
-      { error: 'Clé API OpenAI non configurée' },
-      { status: 500 }
-    )
-  }
-
+export async function POST(req: Request) {
   try {
-    const { address } = await request.json()
+    const { userId } = await auth()
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
+    }
+
+    // Récupérer et logger les données de la requête
+    const { address } = await req.json()
+    console.log('Données reçues:', { address })
 
     if (!isValidKaspaAddress(address)) {
       return NextResponse.json(
@@ -22,6 +30,28 @@ export async function POST(request: Request) {
       )
     }
 
+    // Vérifier le quota de l'utilisateur
+    const userUsage = await prisma.openAIUsage.findFirst({
+      where: { userId }
+    })
+
+    if (!userUsage) {
+      await prisma.openAIUsage.create({
+        data: {
+          userId,
+          totalUsed: 0,
+          totalAvailable: 100,
+          resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        }
+      })
+    } else if (userUsage.totalUsed >= userUsage.totalAvailable) {
+      return NextResponse.json(
+        { error: 'Quota dépassé. Veuillez attendre le reset.' }, 
+        { status: 403 }
+      )
+    }
+
+    // Générer le prompt basé sur l'adresse
     const addressHash = address.slice(-8)
     const prompt = `Create a unique abstract digital art piece with these specific requirements:
                    1. Base the design on the code ${addressHash}
@@ -34,45 +64,51 @@ export async function POST(request: Request) {
                    8. The turquoise elements should create a glowing effect
                    Make it look professional and suitable for a blockchain platform.`
 
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "dall-e-3",
-        prompt: prompt,
-        n: 1,
-        size: "1024x1024",
-        quality: "standard",
-        response_format: "url",
-        style: "vivid"
-      })
+    // Générer l'image avec DALL-E
+    const response = await openai.images.generate({
+      model: "dall-e-3",
+      prompt: prompt,
+      n: 1,
+      size: "1024x1024",
+      quality: "standard",
+      style: "vivid"
     })
 
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error?.message || 'Erreur lors de la génération de l\'image')
-    }
-
-    const data = await response.json()
-    const imageUrl = data.data[0].url
+    const imageUrl = response.data[0].url
 
     if (!imageUrl) {
-      throw new Error('Pas d\'image générée')
+      throw new Error('Pas d\'URL d\'image générée')
     }
 
-    console.log('URL de l\'image générée:', imageUrl)
+    // Sauvegarder l'image générée
+    const generatedImage = await prisma.generatedImage.create({
+      data: {
+        userId,
+        prompt,
+        imageUrl,
+        kaspaAddress: address,
+        isFavorite: false
+      }
+    })
+
+    // Mettre à jour le quota
+    if (userUsage?.id) {
+      await prisma.openAIUsage.update({
+        where: { id: userUsage.id },
+        data: { totalUsed: (userUsage.totalUsed || 0) + 1 }
+      })
+    }
 
     return NextResponse.json({ 
+      success: true,
       imageUrl,
-      message: 'Image générée avec succès'
+      id: generatedImage.id
     })
+
   } catch (error) {
-    console.error('Erreur génération image:', error)
+    console.error('Erreur:', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Erreur lors de la génération de l\'image' },
+      { error: error instanceof Error ? error.message : 'Erreur serveur' },
       { status: 500 }
     )
   }
