@@ -1,7 +1,6 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Home, Settings, Menu, X, Wallet, BarChart2, Gift, History, Star, LogOut } from 'lucide-react'
 import { ImageIcon } from 'lucide-react'
