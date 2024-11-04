@@ -3,10 +3,12 @@
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Home, Image, Settings, Menu, X, Wallet, BarChart2, Gift, History, Star, LogOut } from 'lucide-react'
+import { Home, Settings, Menu, X, Wallet, BarChart2, Gift, History, Star, LogOut } from 'lucide-react'
+import { ImageIcon } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Button } from './button'
 import { useClerk, useUser } from '@clerk/nextjs'
+import NextImage from 'next/image'
 
 const menuItems = [
   { 
@@ -16,7 +18,7 @@ const menuItems = [
     description: 'Générer des NFTs'
   },
   { 
-    icon: Image, 
+    icon: ImageIcon,
     label: 'Collection', 
     path: '/collection',
     description: 'Mes NFTs générés'
@@ -201,10 +203,12 @@ export function Sidenav() {
                 onClick={handleSignOut}
               >
                 {user?.imageUrl ? (
-                  <img 
+                  <NextImage 
                     src={user.imageUrl} 
                     alt={user.fullName || 'Avatar'} 
-                    className="w-10 h-10 rounded-full object-cover border-2 border-[#4fd1c5]"
+                    width={40}
+                    height={40}
+                    className="rounded-full object-cover border-2 border-[#4fd1c5]"
                   />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-gradient-to-r from-[#4fd1c5] to-[#2c7a7b] flex items-center justify-center">
